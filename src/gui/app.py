@@ -234,11 +234,13 @@ def main() -> None:
                 elif kind == "done":
                     progress_bar.stop()
                     btn_run.config(state="normal")
+                    status_var.set("완료")
                     messagebox.showinfo("성공", format_summary(payload))
                     return
                 elif kind == "error":
                     progress_bar.stop()
                     btn_run.config(state="normal")
+                    status_var.set("오류")
                     messagebox.showerror("오류", payload)
                     return
         except queue.Empty:
