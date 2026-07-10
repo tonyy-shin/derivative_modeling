@@ -9,12 +9,14 @@ import tkinter as tk
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 
+from src import pipeline
 from src.extract import extract
 from src.extract.extract import (
     ExtractError,
     ExtractPathError,
     ExtractReadError,
 )
+from src.runlog import new_run_logger
 
 DATE_FORMAT = "%Y-%m-%d"
 
@@ -31,7 +33,8 @@ def format_summary(stats: dict) -> str:
     return (
         f"전체 처리 행 수: {stats['total']}\n"
         f"성공: {stats['success']}\n"
-        f"Skip: {stats['skipped']}"
+        f"Skip: {stats['skipped']}\n"
+        f"제외(필터): {stats['filtered']}"
     )
 
 
@@ -181,69 +184,35 @@ def main() -> None:
         discount_output_path: str,
         evaluation_date,
     ) -> None:
-        # validate/transform/load는 아직 구현되지 않았을 수 있으므로 지연 import한다.
-        # 이렇게 하면 백엔드가 없어도 GUI 셸을 그대로 실행/조작해볼 수 있고,
-        # 미구현 상태에서 실행을 누르면 조용히 멈춘 것처럼 보이는 대신
-        # 아래 except에서 잡혀 에러 팝업으로 명확히 표시된다.
+        # 오케스트레이션과 JSON lines 로깅(validate-skip/transform-filter/fail-fast)은
+        # 전부 pipeline.run_pipeline이 담당한다 (architecture.md §4). 이 worker는
+        # 스레드 경계만 책임진다: 진행 메시지를 result_queue로 중계하고, 예외를
+        # 에러 팝업 메시지로 변환한다.
         #
-        # 추출은 두 입력 파일에 대해 각각 수행한다. except 블록은 어느 파일에서
-        # 실패했는지 사용자에게 명확히 알려야 하므로, 각 read_csv 호출 직전에
-        # 파일명을 담은 status 브레드크럼을 남긴다.
+        # RunLogger는 메인 파이프라인 try보다 앞에서 별도로 생성한다 — 로그 디렉터리
+        # 생성 실패(권한 등) 시에도 GUI가 조용히 멈추지 않아야 한다 (logging_design.md §5).
         try:
-            result_queue.put(("status", "계약정보 추출 중..."))
-            contract_result = extract.read_csv(contract_path)
+            run_logger = new_run_logger()
+        except OSError as e:
+            result_queue.put(("error", f"로그 디렉터리를 생성할 수 없습니다: {e}"))
+            return
 
-            result_queue.put(("status", "시장금리입력 추출 중..."))
-            market_result = extract.read_csv(market_path)
-
-            from src.validate import schemas, validate
-
-            result_queue.put(("status", "계약정보 검증 중..."))
-            contract_df, contract_skip = validate.run(
-                contract_result.dataframe, schemas.ContractInfoSchema
+        try:
+            summary = pipeline.run_pipeline(
+                contract_path,
+                market_path,
+                cashflow_output_path,
+                discount_output_path,
+                evaluation_date,
+                run_logger,
+                on_status=lambda msg: result_queue.put(("status", msg)),
             )
-
-            result_queue.put(("status", "시장금리입력 검증 중..."))
-            market_df, market_skip = validate.run(
-                market_result.dataframe, schemas.MarketRateSchema
-            )
-
-            from src.transform import transform
-
-            result_queue.put(("status", "변환 중..."))
-            cashflow_mapping_df, discount_rate_df = transform.run(
-                contract_df, market_df, evaluation_date
-            )
-
-            from src.load import load
-
-            result_queue.put(("status", "저장 중..."))
-            load.write_csv(cashflow_mapping_df, cashflow_output_path)
-            load.write_csv(discount_rate_df, discount_output_path)
-
-            # skipped는 두 검증 호출의 skip 리스트 길이 합(= validate-skip)이다.
-            # total/success/skipped는 모두 입력 행 기준 지표이며 출력 형태와
-            # 무관하다. Transform 단계의 필터링은 아직 미구현이므로 여기서
-            # 행 수 차이(len(입력) - len(출력))로 역산하지 않는다 — transform이
-            # 계약 1행을 leg×회차 다수 행으로 explode하기 때문에 개념적으로 틀리다.
-            # JSON lines 로그에는 validate-skip과 transform-filter를 별도
-            # 카테고리로 남겨야 한다 (아직 미구현 — 후속 슬라이스에서 처리).
-            validate_skip = len(contract_skip) + len(market_skip)
-            total = len(contract_result.dataframe) + len(market_result.dataframe)
-            summary = {
-                "total": total,
-                "success": total - validate_skip,
-                "skipped": validate_skip,
-            }
             result_queue.put(("done", summary))
         except ExtractReadError as e:
-            # log_fail_fast(category="extract_read", path=e.path, cause=repr(e.cause))  # TODO: 로깅 슬라이스에서 구현
             result_queue.put(("error", f"파일 읽기 실패 ({e.path}): {e}"))
         except ExtractPathError as e:
-            # log_fail_fast(category="extract_path", attempted_path=e.attempted_path)  # TODO: 로깅 슬라이스에서 구현
             result_queue.put(("error", str(e)))
         except ExtractError as e:
-            # log_fail_fast(category="extract_unknown")  # TODO: 로깅 슬라이스에서 구현
             result_queue.put(("error", str(e)))
         except Exception as e:
             result_queue.put(("error", str(e)))

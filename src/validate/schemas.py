@@ -105,10 +105,13 @@ class DiscountRateSchema(pa.DataFrameModel):
     회차: Series[int] = pa.Field(gt=0)
     결제일: Series[pd.Timestamp] = pa.Field(nullable=False)
     통화: Series[str] = pa.Field(nullable=False)
-    평가일로부터기간_년: Series[float] = pa.Field(gt=0)
-    적용할인율: Series[float] = pa.Field(gt=0, lt=1)
-    할인계수: Series[float] = pa.Field(gt=0, le=1)
+    # 범위 제약 없음: 할인 단계는 필터/클램프를 하지 않으므로(spec §5.2) 과거 회차의
+    # 음수 기간, 선형외삽으로 인한 범위 밖 금리, 1 초과 할인계수도 정상 출력값이다.
+    평가일로부터기간_년: Series[float] = pa.Field(nullable=False)
+    적용할인율: Series[float] = pa.Field(nullable=False)
+    할인계수: Series[float] = pa.Field(gt=0)
 
     class Config:
         coerce = True
-        unique = ["계약ID", "회차"]
+        # CRS는 회차마다 자국/외국 두 통화 행을 가지므로 통화까지 포함해야 유일하다.
+        unique = ["계약ID", "통화", "회차"]
