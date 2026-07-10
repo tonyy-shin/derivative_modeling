@@ -17,6 +17,7 @@ from src.extract.extract import (
     ExtractReadError,
 )
 from src.runlog import new_run_logger
+from src.settings import load_last_settings, save_last_settings
 
 DATE_FORMAT = "%Y-%m-%d"
 
@@ -156,9 +157,13 @@ def main() -> None:
         update_run_button_state()
 
     def on_select_cashflow_output() -> None:
+        # initialfile이 없으면 폴더만 고르고 저장을 눌렀을 때 파일명이 비어 있어
+        # 다이얼로그가 아무 경로도 반환하지 못한다 — 기본 파일명을 미리 채워
+        # "폴더 선택 → 저장"만으로 전체 경로가 나오게 한다.
         path = filedialog.asksaveasfilename(
             title="현금흐름매핑 저장 위치 선택",
             defaultextension=".csv",
+            initialfile="현금흐름매핑.csv",
             filetypes=[("CSV files", "*.csv")],
         )
         if not path:
@@ -170,6 +175,7 @@ def main() -> None:
         path = filedialog.asksaveasfilename(
             title="회차별할인율 저장 위치 선택",
             defaultextension=".csv",
+            initialfile="회차별할인율.csv",
             filetypes=[("CSV files", "*.csv")],
         )
         if not path:
@@ -240,6 +246,17 @@ def main() -> None:
         root.after(100, poll_queue)
 
     def on_run() -> None:
+        # 파이프라인 성공/실패와 무관하게 입력값이 다음 실행에 남도록
+        # 실행 시작 시점에 바로 저장한다 (실패는 save 내부에서 조용히 무시).
+        save_last_settings(
+            {
+                "contract_path": get_selected_contract_path(),
+                "market_path": get_selected_market_path(),
+                "cashflow_output_path": get_selected_cashflow_output_path(),
+                "discount_output_path": get_selected_discount_output_path(),
+                "eval_date": eval_date_var.get(),
+            }
+        )
         btn_run.config(state="disabled")
         status_var.set("추출 중...")
         progress_bar.start()
@@ -264,6 +281,20 @@ def main() -> None:
     btn_select_discount_output.config(command=on_select_discount_output)
     btn_run.config(command=on_run)
     eval_date_var.trace_add("write", update_run_button_state)
+
+    # 마지막 실행 시 저장된 값으로 필드를 미리 채운다. 빈 값이면 placeholder
+    # "(선택되지 않음)"를 유지해야 하므로 값이 있는 키만 set한다.
+    # settings.json이 없거나 깨진 경우 load가 빈 dict를 반환하므로 그대로 통과.
+    saved = load_last_settings()
+    for key, var in (
+        ("contract_path", contract_path_var),
+        ("market_path", market_path_var),
+        ("cashflow_output_path", cashflow_output_path_var),
+        ("discount_output_path", discount_output_path_var),
+        ("eval_date", eval_date_var),
+    ):
+        if saved.get(key):
+            var.set(saved[key])
 
     update_run_button_state()
     root.mainloop()
