@@ -1,7 +1,6 @@
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from tkinter import filedialog
 
 import pandas as pd
 
@@ -53,6 +52,10 @@ def prompt_for_input_path() -> str:
     루프는 없다 — 다이얼로그는 실재하는 파일만 반환하므로 콘솔 입력 방식의
     "잘못된 경로 타이핑" 실패 모드 자체가 존재하지 않는다.
     """
+    # tkinter는 GUI 경로에서만 필요하다 — 모듈 레벨에서 import하면 tkinter가 없는
+    # 환경(headless 서버 등)에서 콘솔 진입점(src/pipeline.py)까지 함께 깨진다.
+    from tkinter import filedialog
+
     path = filedialog.askopenfilename(
         title="입력 CSV 파일 선택",
         filetypes=[("CSV files", "*.csv"), ("모든 파일", "*.*")],

@@ -1,7 +1,7 @@
 import pandas as pd
 from typing import NamedTuple
 from dateutil.relativedelta import relativedelta
-from transform.cleaning import TransformCleaningError
+from src.transform.cleaning import TransformCleaningError
 
 COLUMNS = ["계약ID","상품구분","다리구분","통화","회차","시작일","종료일",
            "연환산기간","명목원금","이자현금흐름","원금현금흐름"]
