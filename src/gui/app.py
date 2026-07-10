@@ -39,28 +39,50 @@ def main() -> None:
     root = tk.Tk()
     root.title("IRS/CRS 현금흐름 변환기")
 
-    input_path_var = tk.StringVar(value="")
-    output_path_var = tk.StringVar(value="")
+    contract_path_var = tk.StringVar(value="")
+    market_path_var = tk.StringVar(value="")
+    cashflow_output_path_var = tk.StringVar(value="")
+    discount_output_path_var = tk.StringVar(value="")
     eval_date_var = tk.StringVar(value="")
     status_var = tk.StringVar(value="대기 중")
 
     result_queue: queue.Queue = queue.Queue()
 
-    frame_input = ttk.Frame(root, padding=8)
-    frame_input.pack(fill="x")
-    btn_select_input = ttk.Button(frame_input, text="입력 파일 선택")
-    btn_select_input.grid(row=0, column=0, sticky="w")
-    lbl_input_path = ttk.Label(frame_input, textvariable=input_path_var)
-    lbl_input_path.grid(row=0, column=1, sticky="w", padx=(8, 0))
-    input_path_var.set("(선택되지 않음)")
+    # 입력 파일 1: 계약정보 (contract info)
+    frame_contract = ttk.Frame(root, padding=8)
+    frame_contract.pack(fill="x")
+    btn_select_contract = ttk.Button(frame_contract, text="계약정보 파일 선택")
+    btn_select_contract.grid(row=0, column=0, sticky="w")
+    lbl_contract_path = ttk.Label(frame_contract, textvariable=contract_path_var)
+    lbl_contract_path.grid(row=0, column=1, sticky="w", padx=(8, 0))
+    contract_path_var.set("(선택되지 않음)")
 
-    frame_output = ttk.Frame(root, padding=8)
-    frame_output.pack(fill="x")
-    btn_select_output = ttk.Button(frame_output, text="저장 위치 선택")
-    btn_select_output.grid(row=0, column=0, sticky="w")
-    lbl_output_path = ttk.Label(frame_output, textvariable=output_path_var)
-    lbl_output_path.grid(row=0, column=1, sticky="w", padx=(8, 0))
-    output_path_var.set("(선택되지 않음)")
+    # 입력 파일 2: 시장금리입력 (market rate curve)
+    frame_market = ttk.Frame(root, padding=8)
+    frame_market.pack(fill="x")
+    btn_select_market = ttk.Button(frame_market, text="시장금리입력 파일 선택")
+    btn_select_market.grid(row=0, column=0, sticky="w")
+    lbl_market_path = ttk.Label(frame_market, textvariable=market_path_var)
+    lbl_market_path.grid(row=0, column=1, sticky="w", padx=(8, 0))
+    market_path_var.set("(선택되지 않음)")
+
+    # 출력 파일 1: 현금흐름매핑 (cashflow mapping)
+    frame_cashflow_output = ttk.Frame(root, padding=8)
+    frame_cashflow_output.pack(fill="x")
+    btn_select_cashflow_output = ttk.Button(frame_cashflow_output, text="현금흐름매핑 저장 위치 선택")
+    btn_select_cashflow_output.grid(row=0, column=0, sticky="w")
+    lbl_cashflow_output_path = ttk.Label(frame_cashflow_output, textvariable=cashflow_output_path_var)
+    lbl_cashflow_output_path.grid(row=0, column=1, sticky="w", padx=(8, 0))
+    cashflow_output_path_var.set("(선택되지 않음)")
+
+    # 출력 파일 2: 회차별할인율 (per-installment discount rate)
+    frame_discount_output = ttk.Frame(root, padding=8)
+    frame_discount_output.pack(fill="x")
+    btn_select_discount_output = ttk.Button(frame_discount_output, text="회차별할인율 저장 위치 선택")
+    btn_select_discount_output.grid(row=0, column=0, sticky="w")
+    lbl_discount_output_path = ttk.Label(frame_discount_output, textvariable=discount_output_path_var)
+    lbl_discount_output_path.grid(row=0, column=1, sticky="w", padx=(8, 0))
+    discount_output_path_var.set("(선택되지 않음)")
 
     frame_eval_date = ttk.Frame(root, padding=8)
     frame_eval_date.pack(fill="x")
@@ -82,23 +104,33 @@ def main() -> None:
     progress_bar.pack(fill="x", pady=(4, 0))
 
     # 실제로 선택된 경로가 아니면(placeholder 문구인 채로 남아있으면) 빈 값으로 취급한다.
-    def get_selected_input_path() -> str:
-        value = input_path_var.get()
+    def get_selected_contract_path() -> str:
+        value = contract_path_var.get()
         return "" if value == "(선택되지 않음)" else value
 
-    def get_selected_output_path() -> str:
-        value = output_path_var.get()
+    def get_selected_market_path() -> str:
+        value = market_path_var.get()
+        return "" if value == "(선택되지 않음)" else value
+
+    def get_selected_cashflow_output_path() -> str:
+        value = cashflow_output_path_var.get()
+        return "" if value == "(선택되지 않음)" else value
+
+    def get_selected_discount_output_path() -> str:
+        value = discount_output_path_var.get()
         return "" if value == "(선택되지 않음)" else value
 
     def update_run_button_state(*_args) -> None:
         ok = (
-            bool(get_selected_input_path())
-            and bool(get_selected_output_path())
+            bool(get_selected_contract_path())
+            and bool(get_selected_market_path())
+            and bool(get_selected_cashflow_output_path())
+            and bool(get_selected_discount_output_path())
             and is_valid_date_string(eval_date_var.get())
         )
         btn_run.config(state="normal" if ok else "disabled")
 
-    def on_select_input() -> None:
+    def on_select_contract() -> None:
         try:
             path = extract.prompt_for_input_path()
         except ExtractPathError as e:
@@ -106,56 +138,107 @@ def main() -> None:
                 return  # 취소 — 조용히 무시, 정상 흐름
             messagebox.showerror("오류", str(e))
             return
-        input_path_var.set(path)
+        contract_path_var.set(path)
         update_run_button_state()
 
-    def on_select_output() -> None:
+    def on_select_market() -> None:
+        try:
+            path = extract.prompt_for_input_path()
+        except ExtractPathError as e:
+            if not e.attempted_path:
+                return  # 취소 — 조용히 무시, 정상 흐름
+            messagebox.showerror("오류", str(e))
+            return
+        market_path_var.set(path)
+        update_run_button_state()
+
+    def on_select_cashflow_output() -> None:
         path = filedialog.asksaveasfilename(
-            title="저장 위치 선택",
+            title="현금흐름매핑 저장 위치 선택",
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv")],
         )
         if not path:
             return  # 취소 — 조용히 무시
-        output_path_var.set(path)
+        cashflow_output_path_var.set(path)
         update_run_button_state()
 
-    def worker(input_path: str, output_path: str, evaluation_date) -> None:
+    def on_select_discount_output() -> None:
+        path = filedialog.asksaveasfilename(
+            title="회차별할인율 저장 위치 선택",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv")],
+        )
+        if not path:
+            return  # 취소 — 조용히 무시
+        discount_output_path_var.set(path)
+        update_run_button_state()
+
+    def worker(
+        contract_path: str,
+        market_path: str,
+        cashflow_output_path: str,
+        discount_output_path: str,
+        evaluation_date,
+    ) -> None:
         # validate/transform/load는 아직 구현되지 않았을 수 있으므로 지연 import한다.
         # 이렇게 하면 백엔드가 없어도 GUI 셸을 그대로 실행/조작해볼 수 있고,
         # 미구현 상태에서 실행을 누르면 조용히 멈춘 것처럼 보이는 대신
         # 아래 except에서 잡혀 에러 팝업으로 명확히 표시된다.
+        #
+        # 추출은 두 입력 파일에 대해 각각 수행한다. except 블록은 어느 파일에서
+        # 실패했는지 사용자에게 명확히 알려야 하므로, 각 read_csv 호출 직전에
+        # 파일명을 담은 status 브레드크럼을 남긴다.
         try:
-            result_queue.put(("status", "추출 중..."))
-            extract_result = extract.read_csv(input_path)
+            result_queue.put(("status", "계약정보 추출 중..."))
+            contract_result = extract.read_csv(contract_path)
 
-            from src.validate import validate
+            result_queue.put(("status", "시장금리입력 추출 중..."))
+            market_result = extract.read_csv(market_path)
 
-            result_queue.put(("status", "검증 중..."))
-            valid_df, _skipped = validate.run(extract_result.dataframe)
+            from src.validate import schemas, validate
+
+            result_queue.put(("status", "계약정보 검증 중..."))
+            contract_df, contract_skip = validate.run(
+                contract_result.dataframe, schemas.ContractInfoSchema
+            )
+
+            result_queue.put(("status", "시장금리입력 검증 중..."))
+            market_df, market_skip = validate.run(
+                market_result.dataframe, schemas.MarketRateSchema
+            )
 
             from src.transform import transform
 
             result_queue.put(("status", "변환 중..."))
-            transformed_df = transform.run(valid_df, evaluation_date)
+            cashflow_mapping_df, discount_rate_df = transform.run(
+                contract_df, market_df, evaluation_date
+            )
 
             from src.load import load
 
             result_queue.put(("status", "저장 중..."))
-            load.write_csv(transformed_df, output_path)
+            load.write_csv(cashflow_mapping_df, cashflow_output_path)
+            load.write_csv(discount_rate_df, discount_output_path)
 
-            # Validate-skip과 Transform-filter를 하나의 skipped 값으로 합산한다.
-            # 팝업 표시용 단순화이며, JSON lines 로그에는 두 카테고리를 별도로
-            # 남겨야 한다 (아직 미구현 — 후속 슬라이스에서 처리).
+            # skipped는 두 검증 호출의 skip 리스트 길이 합(= validate-skip)이다.
+            # total/success/skipped는 모두 입력 행 기준 지표이며 출력 형태와
+            # 무관하다. Transform 단계의 필터링은 아직 미구현이므로 여기서
+            # 행 수 차이(len(입력) - len(출력))로 역산하지 않는다 — transform이
+            # 계약 1행을 leg×회차 다수 행으로 explode하기 때문에 개념적으로 틀리다.
+            # JSON lines 로그에는 validate-skip과 transform-filter를 별도
+            # 카테고리로 남겨야 한다 (아직 미구현 — 후속 슬라이스에서 처리).
+            validate_skip = len(contract_skip) + len(market_skip)
+            total = len(contract_result.dataframe) + len(market_result.dataframe)
             summary = {
-                "total": len(extract_result.dataframe),
-                "success": len(transformed_df),
-                "skipped": len(extract_result.dataframe) - len(transformed_df),
+                "total": total,
+                "success": total - validate_skip,
+                "skipped": validate_skip,
             }
             result_queue.put(("done", summary))
         except ExtractReadError as e:
             # log_fail_fast(category="extract_read", path=e.path, cause=repr(e.cause))  # TODO: 로깅 슬라이스에서 구현
-            result_queue.put(("error", str(e)))
+            result_queue.put(("error", f"파일 읽기 실패 ({e.path}): {e}"))
         except ExtractPathError as e:
             # log_fail_fast(category="extract_path", attempted_path=e.attempted_path)  # TODO: 로깅 슬라이스에서 구현
             result_queue.put(("error", str(e)))
@@ -165,7 +248,7 @@ def main() -> None:
         except Exception as e:
             result_queue.put(("error", str(e)))
 
-            
+
 
     def poll_queue() -> None:
         try:
@@ -194,14 +277,22 @@ def main() -> None:
         evaluation_date = datetime.strptime(eval_date_var.get(), DATE_FORMAT).date()
         thread = threading.Thread(
             target=worker,
-            args=(get_selected_input_path(), get_selected_output_path(), evaluation_date),
+            args=(
+                get_selected_contract_path(),
+                get_selected_market_path(),
+                get_selected_cashflow_output_path(),
+                get_selected_discount_output_path(),
+                evaluation_date,
+            ),
             daemon=True,
         )
         thread.start()
         root.after(100, poll_queue)
 
-    btn_select_input.config(command=on_select_input)
-    btn_select_output.config(command=on_select_output)
+    btn_select_contract.config(command=on_select_contract)
+    btn_select_market.config(command=on_select_market)
+    btn_select_cashflow_output.config(command=on_select_cashflow_output)
+    btn_select_discount_output.config(command=on_select_discount_output)
     btn_run.config(command=on_run)
     eval_date_var.trace_add("write", update_run_button_state)
 
