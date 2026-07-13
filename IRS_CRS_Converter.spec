@@ -3,6 +3,13 @@
 # 빌드: 레포 루트에서 `pyinstaller IRS_CRS_Converter.spec`
 # Windows .exe는 Windows에서 빌드해야 한다 (PyInstaller는 크로스 컴파일 미지원).
 
+from PyInstaller.utils.hooks import collect_submodules
+
+# pandera.pandas는 런타임에 pandas 백엔드를 동적으로 등록한다 (pandera.backends.pandas 등).
+# PyInstaller/pyinstaller-hooks-contrib에는 pandera 전용 hook이 없어 정적 분석이
+# 이를 놓치고, 빌드 경고 없이 런타임에서만 실패한다 — 그래서 전체 서브모듈을 명시한다.
+PANDERA_HIDDENIMPORTS = collect_submodules("pandera")
+
 a = Analysis(
     ["src/gui/app.py"],
     # `from src.extract import extract` 등 절대 임포트가 레포 루트 기준이므로
@@ -10,7 +17,14 @@ a = Analysis(
     pathex=[SPECPATH],
     binaries=[],
     datas=[],
-    hiddenimports=[],
+    hiddenimports=PANDERA_HIDDENIMPORTS
+    + [
+        "dateutil.relativedelta",
+        "tkinter",
+        "tkinter.filedialog",
+        "tkinter.messagebox",
+        "tkinter.ttk",
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
